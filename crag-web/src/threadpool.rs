@@ -64,7 +64,7 @@ impl ThreadPool {
 }
 
 #[derive(Debug)]
-struct Worker {
+pub struct Worker {
     _id: usize,
     _thread: thread::JoinHandle<()>,
 }
@@ -73,7 +73,7 @@ impl Worker {
     /// Create a new Worker with a receiver clone
     /// and spawns a thread that loops over jobs sent over the
     /// receiver and executes the job
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    pub fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         // if OS cannot create a new thread, thread::spawn will panic
         // TODO: Change to thread::Builder which returns Result
         let thread = thread::spawn(move || loop {

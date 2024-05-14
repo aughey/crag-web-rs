@@ -3,18 +3,6 @@ use std::net::ToSocketAddrs;
 
 // get "/hello"
 #[allow(dead_code)]
-fn hello_handler() -> response::Response {
-    let body = "Hello, Crag-Web!";
-    let status_line = "HTTP/1.1 200 OK";
-    let len = body.len();
-
-    // format http response
-    let response = format!("{status_line}\r\nContent-Length: {len}\r\n\r\n{body}");
-    response::Response {
-        content: response.as_bytes().to_vec(),
-    }
-}
-
 // get <bad request>
 #[allow(dead_code)]
 fn error_404_handler() -> response::Response {

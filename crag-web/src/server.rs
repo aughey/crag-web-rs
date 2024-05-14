@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use std::error;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::ToSocketAddrs;
+use std::net::{TcpListener, TcpStream};
 
 #[derive(Debug)]
 pub enum ServerError {
+    BadSockAddr,
     ServerCreation(std::io::Error),
     PoolSizeError(threadpool::PoolCreationError),
 }
@@ -24,29 +26,37 @@ impl error::Error for ServerError {}
 #[derive(Debug)]
 pub struct Server {
     tcp_listener: TcpListener,
-    pool: threadpool::ThreadPool,
+    _pool: threadpool::ThreadPool,
     handlers: HashMap<request::Request, handler::Handler>,
 }
 
-impl Server {
-    pub fn build(
-        socket_addr: SocketAddr,
+pub struct ServerBuilder {
+    handlers: HashMap<request::Request, handler::Handler>,
+}
+impl ServerBuilder {
+    pub fn finalize(
+        self,
+        addr: impl ToSocketAddrs,
         pool_size: usize,
-        handlers: HashMap<request::Request, handler::Handler>,
     ) -> Result<Server, ServerError> {
-        let tcp_listener = TcpListener::bind(socket_addr).map_err(ServerError::ServerCreation)?;
+        let socket_addr = match addr.to_socket_addrs() {
+            Ok(addr_iter) => addr_iter,
+            Err(_) => panic!("could not resolve socket address"),
+        }
+        .next()
+        .ok_or(ServerError::BadSockAddr)?;
 
+        let tcp_listener = TcpListener::bind(socket_addr).map_err(ServerError::ServerCreation)?;
         let pool = threadpool::ThreadPool::build(pool_size).map_err(ServerError::PoolSizeError)?;
 
         let server = Server {
             tcp_listener,
-            pool,
-            handlers,
+            _pool: pool,
+            handlers: self.handlers,
         };
 
         Ok(server)
     }
-
     pub fn register_handler(mut self, r: request::Request, handler: handler::Handler) -> Self {
         self.handlers.insert(r, handler);
         self
@@ -56,7 +66,14 @@ impl Server {
         let request = request::Request::UNIDENTIFIED;
         self.register_handler(request, handler)
     }
+}
 
+impl Server {
+    pub fn build() -> ServerBuilder {
+        ServerBuilder {
+            handlers: HashMap::new(),
+        }
+    }
     pub fn run(&self) {
         for stream in self.tcp_listener.incoming() {
             match stream {
@@ -64,9 +81,9 @@ impl Server {
                     // TODO: use Arc instead of cloning entire hashmap
                     let cloned_handlers = self.handlers.clone();
 
-                    self.pool.execute(|| {
-                        handle_connection(cloned_handlers, stream); //?
-                    });
+                    //                    self.pool.execute(|| {
+                    handle_connection(cloned_handlers, stream); //?
+                                                                //                   });
                 }
                 Err(e) => panic!("{} Error handling connection!", e),
             }
@@ -94,8 +111,14 @@ fn handle_connection(handlers: HashMap<request::Request, handler::Handler>, mut 
         }
     };
 
+    println!("got response: {:?}", response.content.len());
+
     // write response into TcpStream
     stream.write_all(&response.content).unwrap(); //?;
+
+    stream.shutdown(std::net::Shutdown::Both).unwrap(); //?; // close the stream (both directions
+
+    println!("Wrote all");
 }
 
 // TODO: Fix return type
@@ -137,4 +160,21 @@ fn parse_request(stream: &mut TcpStream) -> Result<request::Request, std::io::Er
     };
 
     Ok(req)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::response::Response;
+
+    #[test]
+    fn test_builder_pattern() {
+        let _server = Server::build()
+            .register_handler(request::Request::GET("/".to_owned()), |_req| Response {
+                content: "Hello, Crag-Web!".as_bytes().to_vec(),
+            })
+            .register_error_handler(handler::default_error_404_handler)
+            .finalize(("127.0.0.1", 23456), 4)
+            .unwrap();
+    }
 }
