@@ -1,5 +1,5 @@
-use crate::response;
 use crate::request::Request;
+use crate::response;
 
 pub type Handler = fn(Request) -> response::Response;
 
@@ -10,12 +10,13 @@ pub fn default_error_404_handler(_request: Request) -> response::Response {
     let len = bytes.len();
 
     // format http response
-    let response = format!(
-        "{status_line}\r\nContent-Type: text/html\r\nContent-Length: {len}\r\n\r\n"
-    );
+    let response =
+        format!("{status_line}\r\nContent-Type: text/html\r\nContent-Length: {len}\r\n\r\n");
 
     let mut full_response = response.into_bytes();
     full_response.extend(bytes);
 
-    response::Response { content: full_response }
+    response::Response {
+        content: full_response,
+    }
 }

@@ -1,3 +1,3 @@
 pub struct Response {
-    pub content: Vec<u8>
+    pub content: Vec<u8>,
 }
