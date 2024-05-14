@@ -1,17 +1,16 @@
+use crate::handler;
+use crate::request;
+use crate::threadpool;
 use std::collections::HashMap;
 use std::error;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 
-use crate::handler;
-use crate::request::{self, Request};
-use crate::threadpool::{self, PoolCreationError};
-
 #[derive(Debug)]
 pub enum ServerError {
     ServerCreation(std::io::Error),
-    PoolSizeError(PoolCreationError),
+    PoolSizeError(threadpool::PoolCreationError),
 }
 
 impl fmt::Display for ServerError {
@@ -100,7 +99,7 @@ fn handle_connection(handlers: HashMap<request::Request, handler::Handler>, mut 
 }
 
 // TODO: Fix return type
-fn parse_request(stream: &mut TcpStream) -> Result<Request, std::io::Error> {
+fn parse_request(stream: &mut TcpStream) -> Result<request::Request, std::io::Error> {
     // create buffer
     let mut request: Vec<String> = vec![];
     let mut buffer = BufReader::new(stream);
