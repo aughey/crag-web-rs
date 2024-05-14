@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crag-web = { path = "../../" }
-lettre = "0.10"
+crag-web = { path = "../crag-web" }
+lettre = "0.11"
 lettre_email = "0.9"
