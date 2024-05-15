@@ -8,11 +8,11 @@ async fn main() -> Result<()> {
         .register_error_handler(handler::default_error_404_handler)
         .finalize(("127.0.0.1", 12345), 4)?;
 
-    server.run();
+    server.run().unwrap();
 
     Ok(())
 }
 
-fn hello_handler(_req: request::Request) -> response::Response {
-    response::Response::Ok("Hello world".to_string())
+fn hello_handler(_req: request::Request) -> anyhow::Result<response::Response> {
+    Ok(response::Response::Ok("Hello world".to_string()))
 }

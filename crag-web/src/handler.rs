@@ -1,10 +1,11 @@
 use crate::request::Request;
 use crate::response;
 
-pub type Handler = Box<dyn Fn(Request) -> response::Response + Send + Sync + 'static>;
+pub type Handler =
+    Box<dyn Fn(Request) -> anyhow::Result<response::Response> + Send + Sync + 'static>;
 
 /// Default handler for 404 errors
-pub fn default_error_404_handler(_request: Request) -> response::Response {
+pub fn default_error_404_handler(_request: Request) -> anyhow::Result<response::Response> {
     let bytes = include_bytes!("../static/html/404.html");
     let status_line = "HTTP/1.1 404 Not Found";
     let len = bytes.len();
@@ -16,5 +17,5 @@ pub fn default_error_404_handler(_request: Request) -> response::Response {
     let mut full_response = response.into_bytes();
     full_response.extend(bytes);
 
-    response::Response::NotFound("not found".to_string())
+    Ok(response::Response::NotFound("not found".to_string()))
 }

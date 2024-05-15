@@ -6,13 +6,14 @@ use crate::threadpool;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
 use std::net::ToSocketAddrs;
-use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use tracing::error;
 
 pub struct Server {
     tcp_listener: TcpListener,
-    pool: threadpool::ThreadPool,
+    pool: Option<threadpool::ThreadPool>,
     handlers: Arc<HashMap<request::Request, handler::Handler>>,
 }
 
@@ -27,11 +28,11 @@ impl ServerBuilder {
             .ok_or_else(|| anyhow::anyhow!("Could not resolve address"))?;
 
         let tcp_listener = TcpListener::bind(socket_addr)?;
-        let pool = threadpool::ThreadPool::build(pool_size)?;
+        //        let pool = threadpool::ThreadPool::build(pool_size)?;
 
         let server = Server {
             tcp_listener,
-            pool: pool,
+            pool: None,
             handlers: Arc::new(self.handlers),
         };
 
@@ -40,7 +41,7 @@ impl ServerBuilder {
     pub fn register_handler(
         mut self,
         r: request::Request,
-        handler: impl Fn(Request) -> Response + 'static + Send + Sync,
+        handler: impl Fn(Request) -> anyhow::Result<Response> + 'static + Send + Sync,
     ) -> Self {
         self.handlers.insert(r, Box::new(handler));
         self
@@ -48,7 +49,7 @@ impl ServerBuilder {
 
     pub fn register_error_handler(
         self,
-        handler: impl Fn(Request) -> Response + 'static + Send + Sync,
+        handler: impl Fn(Request) -> anyhow::Result<Response> + 'static + Send + Sync,
     ) -> Self {
         let request = request::Request::UNIDENTIFIED;
         self.register_handler(request, Box::new(handler))
@@ -61,27 +62,32 @@ impl Server {
             handlers: HashMap::new(),
         }
     }
-    pub fn run(&self) {
+    pub fn run(&self) -> Result<()> {
         for stream in self.tcp_listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let handlers = self.handlers.clone();
+            let mut stream = stream?;
+            let handlers = self.handlers.clone();
 
-                    self.pool.execute(move || {
-                        handle_connection(handlers, stream); //?
-                    });
-                }
-                Err(e) => panic!("{} Error handling connection!", e),
+            //            self.pool.execute(move || {
+            if let Err(e) = handle_connection(&handlers, &mut stream) {
+                // Error boundary for the thread handling the connection
+                error!("Error handling connection: {e:?}");
+                _ = stream.write_all("HTTP/1.1 500 Internal Server Error\r\n\r\n".as_bytes());
             }
+            //           });
         }
+        Ok(())
     }
 }
 
-fn handle_connection(
-    handlers: Arc<HashMap<request::Request, handler::Handler>>,
-    mut stream: TcpStream,
-) {
-    let req = parse_request(&mut stream).expect("Error parsing request");
+fn handle_connection<S>(
+    handlers: &HashMap<request::Request, handler::Handler>,
+    stream: &mut S,
+) -> Result<()>
+where
+    S: Read + Write,
+{
+    let req = read_and_parse_request(stream)
+        .map_err(|e| anyhow::anyhow!("Error parsing request: {e:?}"))?;
     let hashed_req = match req {
         request::Request::GET(ref a) => request::Request::GET(a.clone()),
         request::Request::POST(ref a, _) => request::Request::POST(a.clone(), String::default()),
@@ -100,33 +106,47 @@ fn handle_connection(
         }
     };
 
+    let response = response?;
+
     // write response into TcpStream
-    stream.write_all(&Vec::<u8>::from(response)).unwrap(); //?;
+    stream.write_all(&Vec::<u8>::from(response))?;
 
-    stream.shutdown(std::net::Shutdown::Both).unwrap(); //?; // close the stream (both directions
-
-    println!("Wrote all");
+    Ok(())
 }
 
-// TODO: Fix return type
-fn parse_request(stream: &mut TcpStream) -> Result<request::Request, std::io::Error> {
+fn read_and_parse_request(stream: &mut impl Read) -> Result<request::Request> {
     // create buffer
-    let mut request: Vec<String> = vec![];
     let mut buffer = BufReader::new(stream);
 
     // Read the HTTP request headers until end of header
-    while request.is_empty() || request.last().insert(&String::default()).len() > 2 {
-        let mut next_line = String::new();
-        buffer.read_line(&mut next_line)?;
-        request.push(next_line);
-    }
+    let lines = {
+        let mut lines: Vec<String> = vec![];
+        loop {
+            let mut next_line = String::new();
+            buffer.read_line(&mut next_line)?;
+            if next_line == "" || next_line == "\r" || next_line == "\r\n" {
+                break lines;
+            }
+            lines.push(next_line);
+        }
+    };
 
+    let (req, _content_length) = parse_request(&lines)?;
+
+    // Parse the request body based on Content-Length
+    // let mut body_buffer = vec![];
+    // buffer.read_to_end(&mut body_buffer)?;
+
+    Ok(req)
+}
+
+fn parse_request(lines: &[String]) -> Result<(request::Request, usize)> {
     // build request from header
-    let mut req = request::Request::build(request.first().unwrap_or(&"/".to_owned()).to_owned());
+    let req = request::Request::build(lines.first().unwrap_or(&"/".to_owned()).to_owned());
 
     if let request::Request::POST(_, _) = req {
         // Find the Content-Length header
-        let content_length = request
+        let content_length = lines
             .iter()
             // .lines()
             .find(|line| line.starts_with("Content-Length:"))
@@ -137,16 +157,12 @@ fn parse_request(stream: &mut TcpStream) -> Result<request::Request, std::io::Er
                     .and_then(|value| value.trim().parse::<usize>().ok())
             })
             .unwrap_or(0);
-
-        // Parse the request body based on Content-Length
-        let mut body_buffer = vec![0; content_length];
-        buffer.read_to_end(&mut body_buffer)?;
-
-        // Add body to request
-        req.add_body(String::from_utf8(body_buffer.clone()).unwrap_or_default());
+        panic!(
+            "Need to read the body according to the content length, but we're not doing that yet",
+        );
     };
 
-    Ok(req)
+    Ok((req, 0))
 }
 
 #[cfg(test)]
@@ -158,7 +174,7 @@ mod tests {
     fn test_builder_pattern() {
         let _server = Server::build()
             .register_handler(request::Request::GET("/".to_owned()), |_req| {
-                Response::Ok("Hello, Crag-Web!".to_string())
+                Ok(Response::Ok("Hello, Crag-Web!".to_string()))
             })
             .register_error_handler(handler::default_error_404_handler)
             .finalize(("127.0.0.1", 23456), 4)
