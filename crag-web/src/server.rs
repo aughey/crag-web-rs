@@ -3,28 +3,12 @@ use crate::request;
 use crate::request::Request;
 use crate::response::Response;
 use crate::threadpool;
+use anyhow::Result;
 use std::collections::HashMap;
-use std::error;
-use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::ToSocketAddrs;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-
-#[derive(Debug)]
-pub enum ServerError {
-    BadSockAddr,
-    ServerCreation(std::io::Error),
-    PoolSizeError(threadpool::PoolCreationError),
-}
-
-impl fmt::Display for ServerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl error::Error for ServerError {}
 
 pub struct Server {
     tcp_listener: TcpListener,
@@ -36,20 +20,14 @@ pub struct ServerBuilder {
     handlers: HashMap<request::Request, handler::Handler>,
 }
 impl ServerBuilder {
-    pub fn finalize(
-        self,
-        addr: impl ToSocketAddrs,
-        pool_size: usize,
-    ) -> Result<Server, ServerError> {
-        let socket_addr = match addr.to_socket_addrs() {
-            Ok(addr_iter) => addr_iter,
-            Err(_) => panic!("could not resolve socket address"),
-        }
-        .next()
-        .ok_or(ServerError::BadSockAddr)?;
+    pub fn finalize(self, addr: impl ToSocketAddrs, pool_size: usize) -> Result<Server> {
+        let socket_addr = addr
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Could not resolve address"))?;
 
-        let tcp_listener = TcpListener::bind(socket_addr).map_err(ServerError::ServerCreation)?;
-        let pool = threadpool::ThreadPool::build(pool_size).map_err(ServerError::PoolSizeError)?;
+        let tcp_listener = TcpListener::bind(socket_addr)?;
+        let pool = threadpool::ThreadPool::build(pool_size)?;
 
         let server = Server {
             tcp_listener,
