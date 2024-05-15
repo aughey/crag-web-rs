@@ -1,5 +1,7 @@
 use crate::handler;
 use crate::request;
+use crate::request::Request;
+use crate::response::Response;
 use crate::threadpool;
 use std::collections::HashMap;
 use std::error;
@@ -7,6 +9,7 @@ use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::ToSocketAddrs;
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ServerError {
@@ -23,11 +26,10 @@ impl fmt::Display for ServerError {
 
 impl error::Error for ServerError {}
 
-#[derive(Debug)]
 pub struct Server {
     tcp_listener: TcpListener,
-    _pool: threadpool::ThreadPool,
-    handlers: HashMap<request::Request, handler::Handler>,
+    pool: threadpool::ThreadPool,
+    handlers: Arc<HashMap<request::Request, handler::Handler>>,
 }
 
 pub struct ServerBuilder {
@@ -51,20 +53,27 @@ impl ServerBuilder {
 
         let server = Server {
             tcp_listener,
-            _pool: pool,
-            handlers: self.handlers,
+            pool: pool,
+            handlers: Arc::new(self.handlers),
         };
 
         Ok(server)
     }
-    pub fn register_handler(mut self, r: request::Request, handler: handler::Handler) -> Self {
-        self.handlers.insert(r, handler);
+    pub fn register_handler(
+        mut self,
+        r: request::Request,
+        handler: impl Fn(Request) -> Response + 'static + Send + Sync,
+    ) -> Self {
+        self.handlers.insert(r, Box::new(handler));
         self
     }
 
-    pub fn register_error_handler(self, handler: handler::Handler) -> Self {
+    pub fn register_error_handler(
+        self,
+        handler: impl Fn(Request) -> Response + 'static + Send + Sync,
+    ) -> Self {
         let request = request::Request::UNIDENTIFIED;
-        self.register_handler(request, handler)
+        self.register_handler(request, Box::new(handler))
     }
 }
 
@@ -78,12 +87,11 @@ impl Server {
         for stream in self.tcp_listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    // TODO: use Arc instead of cloning entire hashmap
-                    let cloned_handlers = self.handlers.clone();
+                    let handlers = self.handlers.clone();
 
-                    //                    self.pool.execute(|| {
-                    handle_connection(cloned_handlers, stream); //?
-                                                                //                   });
+                    self.pool.execute(move || {
+                        handle_connection(handlers, stream); //?
+                    });
                 }
                 Err(e) => panic!("{} Error handling connection!", e),
             }
@@ -91,7 +99,10 @@ impl Server {
     }
 }
 
-fn handle_connection(handlers: HashMap<request::Request, handler::Handler>, mut stream: TcpStream) {
+fn handle_connection(
+    handlers: Arc<HashMap<request::Request, handler::Handler>>,
+    mut stream: TcpStream,
+) {
     let req = parse_request(&mut stream).expect("Error parsing request");
     let hashed_req = match req {
         request::Request::GET(ref a) => request::Request::GET(a.clone()),
@@ -111,10 +122,8 @@ fn handle_connection(handlers: HashMap<request::Request, handler::Handler>, mut 
         }
     };
 
-    println!("got response: {:?}", response.content.len());
-
     // write response into TcpStream
-    stream.write_all(&response.content).unwrap(); //?;
+    stream.write_all(&Vec::<u8>::from(response)).unwrap(); //?;
 
     stream.shutdown(std::net::Shutdown::Both).unwrap(); //?; // close the stream (both directions
 
@@ -170,8 +179,8 @@ mod tests {
     #[test]
     fn test_builder_pattern() {
         let _server = Server::build()
-            .register_handler(request::Request::GET("/".to_owned()), |_req| Response {
-                content: "Hello, Crag-Web!".as_bytes().to_vec(),
+            .register_handler(request::Request::GET("/".to_owned()), |_req| {
+                Response::Ok("Hello, Crag-Web!".to_string())
             })
             .register_error_handler(handler::default_error_404_handler)
             .finalize(("127.0.0.1", 23456), 4)

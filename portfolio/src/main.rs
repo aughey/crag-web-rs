@@ -42,8 +42,8 @@ fn index(_req: request::Request) -> response::Response {
 
 fn send_email() {
     // Set up SMTP credentials (your Gmail address and password)
-    let email = "pinchonalizo@gmail.com";
-    let password = "nibgtodnatvxcamx";
+    let email = "ZZZZZZZZZZZZ@gmail.com";
+    let password = "ZZZZZZZZZZZZZ";
     let smtp_server = "smtp.gmail.com";
 
     // Create SMTP client with SSL

@@ -14,13 +14,5 @@ async fn main() -> Result<()> {
 }
 
 fn hello_handler(_req: request::Request) -> response::Response {
-    let body = "Hello, Crag-Web!";
-    let status_line = "HTTP/1.1 200 OK";
-    let len = body.len();
-
-    // format http response
-    let response = format!("{status_line}\r\nContent-Length: {len}\r\n\r\n{body}");
-    response::Response {
-        content: response.as_bytes().to_vec(),
-    }
+    response::Response::Ok("Hello world".to_string())
 }

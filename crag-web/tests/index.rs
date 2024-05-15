@@ -7,6 +7,9 @@ use crag_web::{handler, request, response, server::Server};
 async fn test_index() -> Result<()> {
     let server = Server::build()
         .register_handler(request::Request::GET(String::from("/hello")), hello_handler)
+        .register_handler(request::Request::GET(String::from("/foo")), |_| {
+            response::Response::Ok("foo".to_string())
+        })
         .register_error_handler(handler::default_error_404_handler)
         .finalize(("127.0.0.1", 12345), 4)?;
 
@@ -22,20 +25,15 @@ async fn test_index() -> Result<()> {
 
     let r = reqwest::get("http://127.0.0.1:12345/hello").await?;
     assert!(r.status().is_success());
-
     assert_eq!(r.text().await?, "Hello, Crag-Web!");
+
+    let r = reqwest::get("http://127.0.0.1:12345/foo").await?;
+    assert!(r.status().is_success());
+    assert_eq!(r.text().await?, "foo");
 
     Ok(())
 }
 
 fn hello_handler(_req: request::Request) -> response::Response {
-    let body = "Hello, Crag-Web!";
-    let status_line = "HTTP/1.1 200 OK";
-    let len = body.len();
-
-    // format http response
-    let response = format!("{status_line}\r\nContent-Length: {len}\r\n\r\n{body}");
-    response::Response {
-        content: response.as_bytes().to_vec(),
-    }
+    response::Response::Ok("Hello, Crag-Web!".to_string())
 }
