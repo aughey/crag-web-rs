@@ -1,8 +1,20 @@
 use crate::request::Request;
 use crate::response;
 
-pub type Handler =
-    Box<dyn Fn(Request) -> anyhow::Result<response::Response> + Send + Sync + 'static>;
+pub trait HandlerTrait {
+    fn handle(&self, request: Request) -> anyhow::Result<response::Response>;
+}
+
+impl<F> HandlerTrait for F
+where
+    F: Fn(Request) -> anyhow::Result<response::Response>,
+{
+    fn handle(&self, request: Request) -> anyhow::Result<response::Response> {
+        self(request)
+    }
+}
+
+pub type Handler = Box<dyn HandlerTrait + Send + Sync + 'static>;
 
 /// Default handler for 404 errors
 pub fn default_error_404_handler(_request: Request) -> anyhow::Result<response::Response> {

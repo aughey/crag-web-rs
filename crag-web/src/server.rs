@@ -1,4 +1,5 @@
 use crate::handler;
+use crate::handler::HandlerTrait;
 use crate::request;
 use crate::request::Request;
 use crate::response::Response;
@@ -18,7 +19,7 @@ struct Handlers {
 }
 impl Handlers {
     fn handle_error(&self, req: Request) -> Result<Response> {
-        (self.error_handler)(req)
+        self.error_handler.handle(req)
     }
 }
 
@@ -65,7 +66,7 @@ impl ServerBuilder {
     pub fn register_handler(
         mut self,
         r: request::Request,
-        handler: impl Fn(Request) -> anyhow::Result<Response> + 'static + Send + Sync,
+        handler: impl HandlerTrait + 'static + Send + Sync,
     ) -> Self {
         self.handlers.insert(r, Box::new(handler));
         self
@@ -73,7 +74,7 @@ impl ServerBuilder {
 
     pub fn register_error_handler(
         mut self,
-        handler: impl Fn(Request) -> anyhow::Result<Response> + 'static + Send + Sync,
+        handler: impl HandlerTrait + 'static + Send + Sync,
     ) -> Result<Self> {
         if let Some(_) = self.error_handler {
             anyhow::bail!("Error handler already registered");
@@ -116,7 +117,7 @@ where
 
     // build response
     let response = match handlers.valid_handlers.get(&req) {
-        Some(handler) => handler(req),
+        Some(handler) => handler.handle(req),
         None => handlers.handle_error(req),
     };
 
