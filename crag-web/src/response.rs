@@ -7,11 +7,11 @@ impl From<Response> for Vec<u8> {
     fn from(value: Response) -> Vec<u8> {
         match value {
             Response::Ok(body) => {
-                const STATUS_LINE: &str = &"HTTP/1.0 200 OK";
+                const STATUS_LINE: &str = "HTTP/1.0 200 OK";
                 to_output(STATUS_LINE, HTML_TYPE, body.as_str())
             }
             Response::NotFound(_) => {
-                const STATUS_LINE: &str = &"HTTP/1.0 404 Not Found";
+                const STATUS_LINE: &str = "HTTP/1.0 404 Not Found";
                 const BODY: &str = include_str!("../static/html/404.html");
                 to_output(STATUS_LINE, HTML_TYPE, BODY)
             }

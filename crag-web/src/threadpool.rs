@@ -79,11 +79,15 @@ impl Worker {
         let thread = thread::spawn(move || loop {
             // blocks all other threads trying to aquire lock
             // until it goes out of scope
-            let job = receiver.lock().unwrap().recv().unwrap();
-
-            println!("Worker {id} received job. Executing.");
-
-            job();
+            match receiver.lock().unwrap().recv() {
+                Ok(job) => {
+                    job();
+                }
+                Err(_) => {
+                    println!("Worker {id} exiting.");
+                    break;
+                }
+            }
         });
 
         Worker {

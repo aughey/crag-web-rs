@@ -13,7 +13,7 @@ async fn test_index() -> Result<()> {
         .register_handler(request::Request::GET(String::from("/foo")), |_| {
             Ok(response::Response::Ok("foo".to_string()))
         })
-        .register_error_handler(handler::default_error_404_handler)
+        .register_error_handler(handler::default_error_404_handler)?
         .finalize(("127.0.0.1", 12345), 4)?;
 
     let _server_join = thread::spawn(move || {
